@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="ru" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Сортировка по цвету</title>
+    <!-- VK Bridge -->
+    <script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-light: #eef2f9;
+            --text-light: #1c1e21;
+            --tube-border-light: #cdd5e0;
+            --primary-light: #4f46e5;
+            --shadow-light: rgba(79, 70, 229, 0.15);
+            --modal-bg-light: #ffffff;
+
+            --bg-dark: #111827;
+            --text-dark: #e5e7eb;
+            --tube-border-dark: #4b5563;
+            --primary-dark: #818cf8;
+            --shadow-dark: rgba(129, 140, 248, 0.2);
+            --modal-bg-dark: #1f2937;
+        }
+        html.light {
+            --bg-color: var(--bg-light);
+            --text-color: var(--text-light);
+            --tube-border-color: var(--tube-border-light);
+            --primary-color: var(--primary-light);
+            --shadow-color: var(--shadow-light);
+            --modal-bg-color: var(--modal-bg-light);
+        }
+        html.dark {
+            --bg-color: var(--bg-dark);
+            --text-color: var(--text-dark);
+            --tube-border-color: var(--tube-border-dark);
+            --primary-color: var(--primary-dark);
+            --shadow-color: var(--shadow-dark);
+            --modal-bg-color: var(--modal-bg-dark);
+        }
+        body {
+            font-family: 'Nunito', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+            overflow: hidden;
+            -webkit-tap-highlight-color: transparent;
+            height: 100vh;
+            width: 100vw;
+        }
+        .screen { display: none; position: fixed; inset: 0; animation: fadeIn 0.3s ease-in-out; }
+        .screen.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .main-menu-button {
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: 700; border-radius: 12px; padding: 12px 24px;
+            text-transform: uppercase; box-shadow: 0 4px 14px 0 var(--shadow-color);
+            transition: all 0.2s ease-in-out; border: none;
+        }
+        .main-menu-button:hover {
+            transform: translateY(-2px); box-shadow: 0 6px 20px 0 var(--shadow-color);
+        }
+        .secondary-button {
+             background-color: transparent; color: var(--primary-color);
+             border: 2px solid var(--primary-color);
+        }
+        .tube-container {
+            position: relative;
+            width: var(--tube-width, 60px);
+            height: var(--tube-height, 240px);
+            background-color: transparent;
+            border: 4px solid var(--tube-border-color);
+            border-top: none;
+            border-radius: 0 0 25px 25px;
+            margin: var(--tube-margin, 10px); cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex; flex-direction: column-reverse;
+            overflow: hidden;
+        }
+        .tube-container::before {
+            content: '';
+            position: absolute;
+            top: -8px;
+            left: -4px;
+            right: -4px;
+            height: 8px;
+            background-color: var(--tube-border-color);
+            border-radius: 5px 5px 0 0;
+        }
+        .tube-container.selected {
+            transform: translateY(-20px) scale(1.05);
+            box-shadow: 0 0 25px var(--primary-color);
+        }
+        .tube-container.pouring {
+            transition: transform 0.4s ease-in-out; z-index: 10;
+        }
+        .liquid {
+            width: 100%; transition: height 0.3s ease-in-out;
+        }
+        .modal { background-color: rgba(0, 0, 0, 0.6); }
+        .modal-content { background-color: var(--modal-bg-color); }
+        
+        #theme-toggle-slider { background-color: #767676; }
+        .slider-icon { font-size: 1.5rem; }
+        #theme-toggle:checked + #theme-toggle-slider:before { transform: translateX(24px); }
+        #theme-toggle-slider:before {
+            content: ''; position: absolute;
+            left: 4px; top: 4px; width: 24px; height: 24px;
+            background-color: white; border-radius: 50%;
+            transition: transform 0.3s ease;
+        }
+        .icon-button {
+            background: none; border: none; padding: 8px;
+            cursor: pointer; color: var(--text-color);
+            display: flex; align-items: center; gap: 4px;
+        }
+        .icon-button svg {
+            width: 28px; height: 28px; stroke-width: 2;
+            stroke: currentColor; fill: none;
+        }
+        .icon-button.disabled { opacity: 0.4; cursor: not-allowed; }
+        .ad-label {
+            font-size: 0.6rem; font-weight: bold;
+            background-color: var(--primary-color); color: white;
+            padding: 1px 4px; border-radius: 4px;
+        }
+        .stats-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        .stats-table th, .stats-table td {
+            padding: 8px 4px; text-align: center;
+            border-bottom: 1px solid var(--tube-border-color);
+        }
+        .stats-table th { color: var(--primary-color); }
+    </style>
+</head>
+<body class="flex items-center justify-center h-screen select-none">
+
+    <!-- Главное меню -->
+    <div id="main-menu" class="screen active flex flex-col items-center justify-center text-center p-8 h-full">
+        <h1 class="text-6xl font-black mb-2" style="color: var(--primary-color);">Color Sort</h1>
+        <p class="mb-8 text-lg" style="color: var(--text-color);">Перелей и отсортируй</p>
+        
+        <div class="flex flex-col items-center space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <button class="main-menu-button" onclick="startGame('easy')">Легко</button>
+                <button class="main-menu-button" onclick="startGame('medium')">Средне</button>
+                <button class="main-menu-button" onclick="startGame('hard')">Сложно</button>
+                <button class="main-menu-button" onclick="startGame('expert')">Эксперт</button>
+                <button class="main-menu-button col-span-2" onclick="startGame('insane')">Безумие</button>
+                <button class="main-menu-button col-span-2" onclick="startGame('impossible')">Невозможно</button>
+            </div>
+            <button class="main-menu-button secondary-button w-full" id="stats-button">Статистика</button>
+            <button class="main-menu-button secondary-button w-full" id="other-games-btn">Другие игры</button>
+            <div class="flex justify-center items-center space-x-4 pt-2">
+                <span class="slider-icon">☀️</span>
+                <label for="theme-toggle" class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="theme-toggle" class="sr-only">
+                    <div id="theme-toggle-slider" class="w-14 h-8 rounded-full"></div>
+                </label>
+                <span class="slider-icon">🌙</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Игровое поле -->
+    <div id="game-screen" class="screen">
+        <div class="grid grid-rows-[auto_1fr_auto] h-full w-full max-w-lg mx-auto p-4">
+            <div class="flex justify-between items-center mb-4 px-2">
+                <button onclick="showPauseMenu()" class="icon-button">
+                    <svg viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </button>
+                <div class="text-center">
+                    <div class="text-xl font-bold">Ходы: <span id="move-count">0</span></div>
+                    <div class="text-lg">Время: <span id="timer">00:00</span></div>
+                </div>
+                <button id="undo-button" class="icon-button disabled">
+                    <svg viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l4-4m-4 4l4 4"></path></svg>
+                    <span id="undo-count" class="text-lg font-bold">3</span>
+                </button>
+            </div>
+            <div id="game-board" class="flex flex-wrap justify-center items-center content-center">
+                <!-- Колбы центрируются в этой области -->
+            </div>
+            <div id="bottom-bar" class="flex justify-center items-center pt-4 h-20">
+                 <!-- Это место теперь зарезервировано и пусто -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Экран "Другие игры" -->
+    <div id="other-games-screen" class="screen flex-col items-center justify-center p-4">
+        <div class="w-full max-w-sm mx-auto text-center">
+            <h1 class="text-3xl font-bold tracking-tight mb-6">Другие игры</h1>
+            <div id="other-games-container" class="grid grid-cols-3 gap-x-4 gap-y-5">
+                <!-- Иконки игр будут здесь -->
+            </div>
+            <button id="back-to-menu-btn" class="w-full mt-6 py-3 px-4 rounded-xl font-semibold text-lg secondary-button">Назад</button>
+        </div>
+    </div>
+
+    <!-- Модальные окна -->
+    <div id="stats-modal" class="modal hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="modal-content w-full max-w-sm p-6 rounded-2xl shadow-lg text-center">
+            <h2 class="text-3xl font-bold mb-4" style="color: var(--primary-color);">Статистика</h2>
+            <table class="stats-table">
+                <thead>
+                    <tr><th>Уровень</th><th>Игр</th><th>Время</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Легко</td><td id="games-played-easy">0</td><td id="best-time-easy">--:--</td></tr>
+                    <tr><td>Средне</td><td id="games-played-medium">0</td><td id="best-time-medium">--:--</td></tr>
+                    <tr><td>Сложно</td><td id="games-played-hard">0</td><td id="best-time-hard">--:--</td></tr>
+                    <tr><td>Эксперт</td><td id="games-played-expert">0</td><td id="best-time-expert">--:--</td></tr>
+                    <tr><td>Безумие</td><td id="games-played-insane">0</td><td id="best-time-insane">--:--</td></tr>
+                    <tr><td>Невозможно</td><td id="games-played-impossible">0</td><td id="best-time-impossible">--:--</td></tr>
+                </tbody>
+            </table>
+            <button onclick="closeModal('stats-modal')" class="main-menu-button mt-6 w-full">Закрыть</button>
+        </div>
+    </div>
+    <div id="pause-modal" class="modal hidden fixed inset-0 z-50 flex items-center justify-center">
+        <div class="modal-content w-11/12 max-w-sm p-6 rounded-2xl shadow-lg text-center">
+            <h2 class="text-3xl font-bold mb-6" style="color: var(--primary-color);">Пауза</h2>
+            <div class="flex flex-col space-y-4">
+                <button onclick="resumeGame()" class="main-menu-button w-full">Продолжить</button>
+                <button onclick="restartGame(true)" class="main-menu-button secondary-button w-full">Начать заново</button>
+                <button onclick="goToMainMenu()" class="main-menu-button secondary-button w-full">Главное меню</button>
+            </div>
+        </div>
+    </div>
+    <div id="win-modal" class="modal hidden fixed inset-0 z-50 flex items-center justify-center">
+        <div class="modal-content w-11/12 max-w-sm p-8 rounded-2xl shadow-lg text-center">
+            <div class="text-6xl mb-4">🎉</div>
+            <h2 class="text-3xl font-bold mb-2" style="color: var(--primary-color);">Победа!</h2>
+            <p class="mb-2">Уровень пройден за <span id="win-time"></span></p>
+            <p class="mb-6">Количество ходов: <span id="win-moves"></span></p>
+            <div class="flex flex-col space-y-4">
+                <button onclick="nextLevel()" class="main-menu-button w-full">Следующий уровень</button>
+                <button onclick="goToMainMenu()" class="main-menu-button secondary-button w-full">Главное меню</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Элементы ---
+        const screens = {
+            mainMenu: document.getElementById('main-menu'),
+            game: document.getElementById('game-screen'),
+            otherGames: document.getElementById('other-games-screen')
+        };
+        const gameBoard = document.getElementById('game-board');
+        const moveCountSpan = document.getElementById('move-count');
+        const timerSpan = document.getElementById('timer');
+        const undoButton = document.getElementById('undo-button');
+        const undoCountSpan = document.getElementById('undo-count');
+        const themeToggle = document.getElementById('theme-toggle');
+        
+        // --- Состояние игры ---
+        let tubes = [], selectedTube = null, moveCount = 0, timerInterval = null, seconds = 0;
+        let currentDifficulty = 'easy', history = [], isPaused = false, isAnimating = false;
+        let undosLeft = 3;
+        let vkUserId = null;
+
+        let gameData = {
+            theme: 'light',
+            levelsCompletedSinceAd: 0,
+            stats: { 
+                gamesPlayed: { easy: 0, medium: 0, hard: 0, expert: 0, insane: 0, impossible: 0 },
+                bestTime: { easy: Infinity, medium: Infinity, hard: Infinity, expert: Infinity, insane: Infinity, impossible: Infinity } 
+            }
+        };
+
+        // --- Палитра и настройки ---
+        const COLORS = ["#d90429", "#f77f00", "#fcc419", "#20c997", "#43a047", "#0077b6", "#03045e", "#7209b7", "#ff006e", "#8d5b4c", "#8d99ae", "#00b4d8", "#c72c71"];
+        const LIQUID_LAYERS = 4;
+        const UNDO_LIMIT = 3;
+        const LEVEL_CONFIG = {
+            easy:   { tubes: 6, empty: 2, colors: 4 },
+            medium: { tubes: 9, empty: 2, colors: 7 },
+            hard:   { tubes: 12, empty: 2, colors: 10 },
+            expert: { tubes: 15, empty: 2, colors: 13 },
+            insane: { tubes: 18, empty: 2, colors: 13, doubleColors: true },
+            impossible: { tubes: 25, empty: 2, colors: 13, doubleColors: true }
+        };
+
+        // --- Инициализация ---
+        document.addEventListener('DOMContentLoaded', () => {
+            init();
+            document.getElementById('stats-button').addEventListener('click', () => openModal('stats-modal'));
+            undoButton.addEventListener('click', undoMove);
+            themeToggle.addEventListener('change', () => setTheme(themeToggle.checked ? 'dark' : 'light'));
+            window.addEventListener('resize', () => {
+                if (screens.game.classList.contains('active')) adjustTubeSize(tubes.length)
+            });
+            document.getElementById('other-games-btn').addEventListener('click', () => showScreen('otherGames'));
+            document.getElementById('back-to-menu-btn').addEventListener('click', () => showScreen('mainMenu'));
+            document.getElementById('other-games-container').addEventListener('click', e => {
+                const gameEl = e.target.closest('[data-app-id]');
+                if (gameEl) {
+                    const appId = parseInt(gameEl.dataset.appId);
+                    vkBridge.send('VKWebAppOpenApp', { app_id: appId });
+                }
+            });
+        });
+        
+        async function init() {
+            vkBridge.send('VKWebAppInit');
+            try {
+                const user = await vkBridge.send('VKWebAppGetUserInfo');
+                vkUserId = user.id;
+            } catch (error) {
+                console.warn("Could not get VK User ID.", error);
+                vkUserId = 'test_user'; // Fallback
+            }
+            await loadGameData();
+            setTheme(gameData.theme);
+            renderOtherGames();
+            showScreen('mainMenu');
+        }
+
+        // --- Управление экранами и рекламой ---
+        function showScreen(screenName) {
+            Object.values(screens).forEach(s => s.classList.remove('active'));
+            screens[screenName].classList.add('active');
+            vkBridge.send('VKWebAppShowBannerAd', { banner_location: 'bottom' }).catch(e => console.log("Banner Ad error", e));
+        }
+
+        async function showRewardedAd() {
+            try {
+                const adData = await vkBridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' });
+                return adData.result === true;
+            } catch (e) {
+                console.error("Rewarded ad error:", e);
+                return false;
+            }
+        }
+
+        function showInterstitialAd() {
+            gameData.levelsCompletedSinceAd++;
+            if (gameData.levelsCompletedSinceAd >= 3) {
+                vkBridge.send('VKWebAppShowInterstitialAd').catch(e => console.log("Interstitial Ad error", e));
+                gameData.levelsCompletedSinceAd = 0;
+            }
+            saveGameData();
+        }
+
+        // --- Управление игрой ---
+        function startGame(difficulty) {
+            currentDifficulty = difficulty;
+            if (!gameData.stats.gamesPlayed[difficulty]) gameData.stats.gamesPlayed[difficulty] = 0;
+            gameData.stats.gamesPlayed[difficulty]++;
+            saveGameData();
+            resetGame();
+            showScreen('game');
+        }
+        
+        function resetGame() {
+            isPaused = false; moveCount = 0; seconds = 0; history = [];
+            undosLeft = UNDO_LIMIT;
+            updateMoveCount(); updateUndoButtonUI(); startTimer();
+            generateLevel(currentDifficulty);
+        }
+
+        function restartGame(fromPause = false) {
+            if (fromPause) closeModal('pause-modal');
+            gameData.stats.gamesPlayed[currentDifficulty]++; 
+            saveGameData(); 
+            resetGame();
+        }
+        
+        function nextLevel() { 
+            closeModal('win-modal'); 
+            resetGame(); 
+        }
+
+        function goToMainMenu() {
+            closeModal('pause-modal'); closeModal('win-modal');
+            stopTimer();
+            showScreen('mainMenu');
+        }
+
+        // --- Генерация уровня ---
+        function generateLevel(difficulty) {
+            const config = LEVEL_CONFIG[difficulty];
+            const tubesWithLiquid = config.tubes - config.empty;
+            const levelColors = shuffleArray([...COLORS]).slice(0, config.colors);
+            const layersPerColor = config.doubleColors ? LIQUID_LAYERS * 2 : LIQUID_LAYERS;
+            let colorPool = levelColors.flatMap(color => Array(layersPerColor).fill(color));
+            colorPool = shuffleArray(colorPool);
+            tubes = [];
+            for (let i = 0; i < tubesWithLiquid; i++) {
+                tubes.push({ id: i, liquids: colorPool.splice(0, LIQUID_LAYERS) });
+            }
+            for (let i = 0; i < config.empty; i++) {
+                tubes.push({ id: tubes.length, liquids: [] });
+            }
+            tubes.push({ id: tubes.length, liquids: [], isPlaceholder: true });
+            adjustTubeSize(tubes.length);
+            if (isLevelSolved(tubes.filter(t => !t.isPlaceholder))) {
+                return generateLevel(difficulty);
+            }
+            renderTubes();
+        }
+
+        function isLevelSolved(currentTubes) {
+            return currentTubes.every(t => t.liquids.length === 0 || (t.liquids.length === LIQUID_LAYERS && new Set(t.liquids).size === 1));
+        }
+
+        function adjustTubeSize(tubeCount) {
+            const boardHeight = gameBoard.clientHeight;
+            const boardWidth = gameBoard.clientWidth;
+            let bestLayout = { cols: 0, tubeHeight: 0 };
+            for (let cols = tubeCount; cols >= 1; cols--) {
+                const rows = Math.ceil(tubeCount / cols);
+                const cellWidth = boardWidth / cols;
+                const cellHeight = boardHeight / rows;
+                const prospectiveTubeWidth = cellWidth * 0.8;
+                const prospectiveTubeHeight = prospectiveTubeWidth * 4;
+                if (prospectiveTubeHeight < cellHeight * 0.95) {
+                    if (prospectiveTubeHeight > bestLayout.tubeHeight) {
+                        bestLayout = { cols: cols, tubeHeight: prospectiveTubeHeight };
+                    }
+                }
+            }
+            if(bestLayout.cols === 0) bestLayout.cols = tubeCount <= 12 ? 4 : 5;
+            const finalCols = bestLayout.cols;
+            const finalTubeWidth = (boardWidth / finalCols) * 0.8;
+            const finalTubeHeight = finalTubeWidth * 4;
+            const finalTubeMargin = (boardWidth / finalCols) * 0.1;
+            document.documentElement.style.setProperty('--tube-width', `${finalTubeWidth}px`);
+            document.documentElement.style.setProperty('--tube-height', `${finalTubeHeight}px`);
+            document.documentElement.style.setProperty('--tube-margin', `${finalTubeMargin}px`);
+        }
+
+        // --- Рендеринг ---
+        function renderTubes() {
+            gameBoard.innerHTML = '';
+            tubes.forEach(tube => {
+                const tubeEl = document.createElement('div');
+                tubeEl.className = 'tube-container';
+                tubeEl.dataset.id = tube.id;
+                
+                if (tube.isPlaceholder) {
+                    tubeEl.style.borderStyle = 'dashed';
+                    tubeEl.innerHTML = `<div class="m-auto flex flex-col items-center justify-center h-full"><span class="text-3xl font-bold" style="color: var(--primary-color)">+</span><span class="ad-label">AD</span></div>`;
+                    tubeEl.addEventListener('click', () => unlockExtraTube(tube.id));
+                } else {
+                    tubeEl.addEventListener('click', () => onTubeClick(tube.id));
+                    tube.liquids.forEach(color => {
+                        const liquidEl = document.createElement('div');
+                        liquidEl.className = 'liquid';
+                        liquidEl.style.backgroundColor = color;
+                        liquidEl.style.height = `${100 / LIQUID_LAYERS}%`;
+                        tubeEl.appendChild(liquidEl);
+                    });
+                }
+                gameBoard.appendChild(tubeEl);
+            });
+        }
+        
+        function renderOtherGames() {
+            const container = document.getElementById('other-games-container');
+            container.innerHTML = '';
+            const games = [
+                { name: 'Bubble Shooter', appId: 54051411, icon: 'icon1.png' }, { name: 'Тетрис', appId: 54051413, icon: 'icon2.png' },
+                { name: 'Tower Blocks', appId: 53962513, icon: 'icon3.png' }, { name: 'Блок Про', appId: 53936296, icon: 'icon4.png' },
+                { name: 'Филворды', appId: 53867134, icon: 'icon5.png' }, { name: 'Словли', appId: 53861990, icon: 'icon6.png' },
+                { name: 'Brick Balls', appId: 54023580, icon: 'icon7.png' }, { name: '2048', appId: 53965380, icon: 'icon8.png' },
+                { name: 'Math Matrix', appId: 53970659, icon: 'icon9.png' }
+            ];
+            games.forEach(game => {
+                const gameEl = document.createElement('div');
+                gameEl.className = "flex flex-col items-center cursor-pointer group";
+                gameEl.dataset.appId = game.appId;
+                gameEl.innerHTML = `
+                    <div class="w-20 h-20 bg-gray-200 dark:bg-gray-700 rounded-3xl mb-2 flex items-center justify-center group-hover:scale-105 transition-transform overflow-hidden">
+                       <img src="${game.icon}" alt="${game.name}" class="w-full h-full object-cover">
+                    </div>
+                    <span class="text-xs font-medium text-center">${game.name}</span>`;
+                container.appendChild(gameEl);
+            });
+        }
+
+        // --- Логика кликов и перемещений ---
+        function onTubeClick(tubeId) {
+            if (isAnimating || isPaused) return;
+            const clickedTubeData = tubes.find(t => t.id === tubeId);
+            if (clickedTubeData.isPlaceholder) return;
+            const tubeEl = document.querySelector(`.tube-container[data-id='${tubeId}']`);
+            if (selectedTube === null) {
+                if (clickedTubeData.liquids.length > 0) {
+                    selectedTube = clickedTubeData;
+                    tubeEl.classList.add('selected');
+                }
+            } else {
+                const selectedEl = document.querySelector('.tube-container.selected');
+                if (selectedTube.id === clickedTubeData.id) {
+                    selectedTube = null;
+                    selectedEl?.classList.remove('selected');
+                } else {
+                    if (canPour(selectedTube, clickedTubeData)) {
+                        pour(selectedTube, clickedTubeData);
+                    }
+                    selectedTube = null;
+                    selectedEl?.classList.remove('selected');
+                }
+            }
+        }
+
+        function canPour(from, to) {
+            if (!from || !to) return false;
+            if (from.liquids.length === 0 || to.liquids.length === LIQUID_LAYERS) return false;
+            if (to.liquids.length === 0) return true;
+            return from.liquids[from.liquids.length - 1] === to.liquids[to.liquids.length - 1];
+        }
+        
+        async function pour(fromTube, toTube) {
+            isAnimating = true;
+            saveState();
+            const fromEl = document.querySelector(`.tube-container[data-id='${fromTube.id}']`);
+            const toEl = document.querySelector(`.tube-container[data-id='${toTube.id}']`);
+            const topColor = fromTube.liquids[fromTube.liquids.length - 1];
+            let amountToMove = fromTube.liquids.slice().reverse().findIndex(c => c !== topColor);
+            if (amountToMove === -1) amountToMove = fromTube.liquids.length;
+            amountToMove = Math.min(amountToMove, LIQUID_LAYERS - toTube.liquids.length);
+            const liquidsToMove = fromTube.liquids.slice(fromTube.liquids.length - amountToMove);
+            const fromRect = fromEl.getBoundingClientRect();
+            const toRect = toEl.getBoundingClientRect();
+            const isPouringRight = toRect.x > fromRect.x;
+            const rotation = isPouringRight ? 20 : -20;
+            fromEl.style.transformOrigin = 'top center';
+            let moveX = (toRect.left + toRect.width / 2) - (fromRect.left + fromRect.width / 2);
+            let moveY = toRect.top - fromRect.top - fromRect.height / 2;
+            fromEl.classList.add('pouring');
+            fromEl.style.transform = `translate(${moveX}px, ${moveY}px)`;
+            await wait(200);
+            fromEl.style.transform = `translate(${moveX}px, ${moveY}px) rotate(${rotation}deg)`;
+            const liquidEls = Array.from(fromEl.querySelectorAll('.liquid')).slice(-amountToMove);
+            liquidEls.forEach(el => el.style.height = '0%');
+            await wait(300);
+            for (const color of liquidsToMove.reverse()) {
+                const newLiquid = document.createElement('div');
+                newLiquid.className = 'liquid';
+                newLiquid.style.backgroundColor = color;
+                newLiquid.style.height = '0%';
+                toEl.appendChild(newLiquid);
+                await wait(1);
+                newLiquid.style.height = `${100 / LIQUID_LAYERS}%`;
+                await wait(50);
+            }
+            await wait(200);
+            fromEl.style.transform = `translate(${moveX}px, ${moveY}px)`;
+            await wait(200);
+            fromEl.style.transform = 'translate(0, 0)';
+            await wait(300);
+            fromTube.liquids.splice(fromTube.liquids.length - amountToMove);
+            toTube.liquids.push(...liquidsToMove.reverse());
+            renderTubes();
+            moveCount++;
+            updateMoveCount();
+            if (isLevelSolved(tubes.filter(t => !t.isPlaceholder))) {
+                winGame();
+            }
+            isAnimating = false;
+        }
+
+        // --- Дополнительная колба ---
+        async function unlockExtraTube(tubeId) {
+            if (isAnimating) return;
+            const adShown = await showRewardedAd();
+            if (adShown) {
+                saveState();
+                const tube = tubes.find(t => t.id === tubeId);
+                if (tube) {
+                    tube.isPlaceholder = false;
+                    renderTubes();
+                }
+            }
+        }
+        
+        // --- Проверка и завершение победы ---
+        function winGame() {
+            stopTimer();
+            if (seconds < gameData.stats.bestTime[currentDifficulty] || gameData.stats.bestTime[currentDifficulty] === Infinity) {
+                gameData.stats.bestTime[currentDifficulty] = seconds;
+            }
+            showInterstitialAd(); // Проверяем, нужно ли показать межэкранную рекламу
+            saveGameData();
+            updateStatsDisplay();
+            document.getElementById('win-time').textContent = formatTime(seconds);
+            document.getElementById('win-moves').textContent = moveCount;
+            openModal('win-modal');
+        }
+        
+        // --- История ходов (Undo) ---
+        function saveState() {
+            history.push({
+                tubes: JSON.parse(JSON.stringify(tubes)),
+                undosLeft: undosLeft
+            });
+            if (history.length > 20) history.shift();
+            updateUndoButtonUI();
+        }
+
+        function undoMove() {
+            if (history.length > 0 && !isAnimating && undosLeft > 0) {
+                const lastState = history.pop();
+                tubes = lastState.tubes;
+                undosLeft = lastState.undosLeft - 1; // Восстанавливаем и отнимаем 1
+                moveCount--;
+                updateMoveCount();
+                adjustTubeSize(tubes.length);
+                renderTubes();
+                updateUndoButtonUI();
+            }
+        }
+        
+        function updateUndoButtonUI() {
+            undoCountSpan.textContent = undosLeft;
+            const isDisabled = history.length === 0 || undosLeft <= 0;
+            undoButton.classList.toggle('disabled', isDisabled);
+        }
+
+        // --- Таймер и UI ---
+        function startTimer() { stopTimer(); timerInterval = setInterval(() => { if (!isPaused) { seconds++; timerSpan.textContent = formatTime(seconds); }}, 1000); }
+        function stopTimer() { clearInterval(timerInterval); }
+        function formatTime(s) { return `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`; }
+        function updateMoveCount() { moveCountSpan.textContent = moveCount; }
+        function showPauseMenu() { isPaused = true; openModal('pause-modal'); }
+        function resumeGame() { isPaused = false; closeModal('pause-modal'); }
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+        
+        // --- Тема и сохранение ---
+        function setTheme(theme) {
+            gameData.theme = theme;
+            document.documentElement.classList.toggle('dark', theme === 'dark');
+            themeToggle.checked = theme === 'dark';
+            saveGameData();
+        }
+
+        async function saveGameData() {
+            if (!vkUserId) return;
+            const storageKey = `colorsort_data_${vkUserId}`;
+            const dataToSave = JSON.stringify(gameData);
+            try {
+                await vkBridge.send('VKWebAppStorageSet', { key: storageKey, value: dataToSave });
+            } catch (error) {
+                localStorage.setItem(storageKey, dataToSave); // Fallback
+            }
+        }
+
+        async function loadGameData() {
+            if (!vkUserId) return;
+            const storageKey = `colorsort_data_${vkUserId}`;
+            let loadedData = null;
+            try {
+                const response = await vkBridge.send('VKWebAppStorageGet', { keys: [storageKey] });
+                if (response.keys[0]?.value) {
+                    loadedData = JSON.parse(response.keys[0].value);
+                }
+            } catch (error) {
+                const localData = localStorage.getItem(storageKey); // Fallback
+                if (localData) { loadedData = JSON.parse(localData); }
+            }
+            if (loadedData) {
+                // Мержим данные, чтобы новые уровни/настройки подхватывались
+                gameData.stats.bestTime = {...gameData.stats.bestTime, ...loadedData.stats?.bestTime };
+                gameData.stats.gamesPlayed = {...gameData.stats.gamesPlayed, ...loadedData.stats?.gamesPlayed };
+                gameData.theme = loadedData.theme || 'light';
+                gameData.levelsCompletedSinceAd = loadedData.levelsCompletedSinceAd || 0;
+            }
+            updateStatsDisplay();
+        }
+
+        function updateStatsDisplay() {
+            Object.keys(gameData.stats.bestTime).forEach(diff => {
+                const bestTimeEl = document.getElementById(`best-time-${diff}`);
+                const gamesPlayedEl = document.getElementById(`games-played-${diff}`);
+                if (bestTimeEl) {
+                    bestTimeEl.textContent = gameData.stats.bestTime[diff] === Infinity ? '--:--' : formatTime(gameData.stats.bestTime[diff]);
+                }
+                if(gamesPlayedEl) {
+                    gamesPlayedEl.textContent = (gameData.stats.gamesPlayed && gameData.stats.gamesPlayed[diff]) || 0;
+                }
+            });
+        }
+
+        // --- Вспомогательные функции ---
+        function shuffleArray(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+        function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+    </script>
+</body>
+</html>
+
