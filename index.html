@@ -192,7 +192,7 @@
                     <span id="undo-count" class="absolute top-1 right-1 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">3</span>
                 </button>
             </div>
-            <div id="game-board" class="flex flex-wrap justify-center items-center content-center"></div>
+            <div id="game-board" class="flex flex-wrap justify-center items-center content-center min-h-0"></div>
             <div id="bottom-bar" class="flex justify-center items-center pt-4 h-20"></div>
         </div>
     </div>
@@ -267,6 +267,7 @@
         let currentDifficulty = 'easy', history = [], isPaused = false, isAnimating = false;
         let undosLeft = 3;
         let vkUserId = null;
+        let wasMusicPlaying = false;
 
         let gameData = {
             theme: 'light',
@@ -298,18 +299,19 @@
             isReady: false,
 
             init() {
-                this.pourSynth = new Tone.MembraneSynth({
-                    pitchDecay: 0.01,
-                    octaves: 5,
-                    envelope: { attack: 0.001, decay: 0.2, sustain: 0.01, release: 0.1 }
+                this.pourSynth = new Tone.FMSynth({
+                    harmonicity: 1.5,
+                    modulationIndex: 10,
+                    envelope: { attack: 0.01, decay: 0.2, sustain: 0.01, release: 0.2 },
+                    modulationEnvelope: { attack: 0.01, decay: 0.3, sustain: 0.01, release: 0.3 }
                 }).toDestination();
-                this.pourSynth.volume.value = -6;
+                this.pourSynth.volume.value = -3;
 
                 this.winSynth = new Tone.PolySynth(Tone.Synth, {
-                    oscillator: { type: 'sine' },
-                    envelope: { attack: 0.05, decay: 0.2, sustain: 0.3, release: 1 }
+                     oscillator: { type: 'triangle8' },
+                     envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 1 }
                 }).toDestination();
-                this.winSynth.volume.value = -8;
+                this.winSynth.volume.value = -10;
                 
                 this.isReady = true;
             },
@@ -318,12 +320,14 @@
                 if (!this.isReady || gameData.isMuted) return;
                 try {
                     if (sound === 'pour') {
-                        this.pourSynth.triggerAttackRelease('C2', '8n', Tone.now());
+                        this.pourSynth.triggerAttack("C2", Tone.now());
                     }
                     if (sound === 'win') {
                         const now = Tone.now();
-                        this.winSynth.triggerAttackRelease(['C4', 'E4', 'G4', 'C5'], '8n', now);
-                        this.winSynth.triggerAttackRelease(['E4', 'G4', 'C5', 'E5'], '8n', now + 0.2);
+                        const notes = ['C4', 'E4', 'G4', 'C5', 'E5', 'G5'];
+                        notes.forEach((note, i) => {
+                            this.winSynth.triggerAttackRelease(note, '16n', now + i * 0.1);
+                        });
                     }
                 } catch(e) { console.error("Sound play error", e); }
             },
@@ -333,7 +337,7 @@
                 document.getElementById('sound-on-icon').classList.toggle('hidden', gameData.isMuted);
                 document.getElementById('sound-off-icon').classList.toggle('hidden', !gameData.isMuted);
                 
-                if (gameData.isMuted) {
+                if (gameData.isMuted || !screens.game.classList.contains('active')) {
                     bgMusic.pause();
                 } else {
                     bgMusic.play().catch(e => {});
@@ -352,7 +356,9 @@
             undoButton.addEventListener('click', undoMove);
             themeToggle.addEventListener('change', () => setTheme(themeToggle.checked ? 'dark' : 'light'));
             window.addEventListener('resize', () => {
-                if (!screens.game.classList.contains('hidden')) adjustTubeSize(tubes.length)
+                if (!screens.game.classList.contains('hidden')) {
+                     requestAnimationFrame(() => adjustTubeSize(tubes.length));
+                }
             });
             document.getElementById('other-games-btn').addEventListener('click', () => showScreen('otherGames'));
             document.getElementById('back-to-menu-btn').addEventListener('click', () => showScreen('mainMenu'));
@@ -365,7 +371,9 @@
                  if (!audioManager.isReady) {
                     Tone.start().then(() => {
                         audioManager.init();
-                        if(!gameData.isMuted) bgMusic.play().catch(e => {});
+                        if(!gameData.isMuted && screens.game.classList.contains('active')) {
+                            bgMusic.play().catch(e => {});
+                        }
                     });
                  }
             }, { once: true });
@@ -373,6 +381,22 @@
         
         async function init() {
             vkBridge.send('VKWebAppInit');
+            
+            vkBridge.subscribe(e => {
+                if (e.detail.type === 'VKWebAppViewHide') {
+                    if (!bgMusic.paused) {
+                        wasMusicPlaying = true;
+                        bgMusic.pause();
+                    }
+                }
+                if (e.detail.type === 'VKWebAppViewRestore') {
+                    if (wasMusicPlaying && !gameData.isMuted && !screens.game.classList.contains('hidden')) {
+                       bgMusic.play().catch(e => {});
+                    }
+                    wasMusicPlaying = false;
+                }
+            });
+
             try {
                 const user = await vkBridge.send('VKWebAppGetUserInfo');
                 vkUserId = user.id;
@@ -395,6 +419,7 @@
             
             if (screenName === 'game') {
                 if (!gameData.isMuted) bgMusic.play().catch(e => {});
+                requestAnimationFrame(() => adjustTubeSize(tubes.length));
             } else {
                 bgMusic.pause();
             }
@@ -422,7 +447,6 @@
             currentDifficulty = difficulty;
             resetGame();
             showScreen('game');
-            setTimeout(() => adjustTubeSize(tubes.length), 50); // Delay to allow rendering
         }
         
         function resetGame() {
@@ -688,7 +712,7 @@
         function formatTime(s) { return `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`; }
         function updateMoveCount() { moveCountSpan.textContent = moveCount; }
         function showPauseMenu() { isPaused = true; if (!gameData.isMuted) bgMusic.pause(); openModal('pause-modal'); }
-        function resumeGame() { isPaused = false; if (!gameData.isMuted) bgMusic.play().catch(e=>{}); closeModal('pause-modal'); }
+        function resumeGame() { isPaused = false; if (!gameData.isMuted && !screens.game.classList.contains('hidden')) bgMusic.play().catch(e=>{}); closeModal('pause-modal'); }
         function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
         function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
         
