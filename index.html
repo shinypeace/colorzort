@@ -6,8 +6,6 @@
     <title>Сортировка по цвету</title>
     <!-- VK Bridge -->
     <script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
-    <!-- Tone.js for Audio -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,6 +18,8 @@
             --primary-light: #4f46e5;
             --shadow-light: rgba(79, 70, 229, 0.15);
             --modal-bg-light: #ffffff;
+            --locked-bg-light: #d1d5db;
+            --locked-text-light: #9ca3af;
         }
         html.light {
             --bg-color: var(--bg-light);
@@ -28,6 +28,8 @@
             --primary-color: var(--primary-light);
             --shadow-color: var(--shadow-light);
             --modal-bg-color: var(--modal-bg-light);
+            --locked-bg-color: var(--locked-bg-light);
+            --locked-text-color: var(--locked-text-light);
         }
         html.dark {
             --bg-color: #111827;
@@ -36,6 +38,8 @@
             --primary-color: #818cf8;
             --shadow-color: rgba(129, 140, 248, 0.2);
             --modal-bg-color: #1f2937;
+            --locked-bg-color: #374151;
+            --locked-text-color: #6b7280;
         }
         body {
             font-family: 'Nunito', sans-serif;
@@ -62,8 +66,13 @@
             text-transform: uppercase; box-shadow: 0 4px 14px 0 var(--shadow-color);
             transition: all 0.2s ease-in-out; border: none;
         }
-        .main-menu-button:hover {
+        .main-menu-button:hover:not(:disabled) {
             transform: translateY(-2px); box-shadow: 0 6px 20px 0 var(--shadow-color);
+        }
+        .main-menu-button:disabled {
+            background-color: var(--locked-bg-color);
+            cursor: not-allowed;
+            box-shadow: none;
         }
         .secondary-button {
              background-color: transparent; color: var(--primary-color);
@@ -142,6 +151,7 @@
 <body class="flex items-center justify-center h-screen select-none">
 
     <audio id="bg-music" loop src="music.mp3"></audio>
+    <audio id="pour-sound" src="pour-sound.mp3" preload="auto"></audio>
 
     <!-- Главное меню -->
     <div id="main-menu" class="screen hidden flex flex-col items-center justify-center text-center p-8 h-full w-full max-w-md mx-auto">
@@ -149,14 +159,11 @@
         <p class="mb-8 text-lg" style="color: var(--text-color);">Перелей и отсортируй</p>
         
         <div class="w-full">
+            <div id="level-selection-container" class="grid grid-cols-2 gap-4">
+                <!-- Level buttons will be generated here -->
+            </div>
             <div class="grid grid-cols-2 gap-4">
-                <button class="main-menu-button" onclick="startGame('easy')">Легко</button>
-                <button class="main-menu-button" onclick="startGame('medium')">Средне</button>
-                <button class="main-menu-button" onclick="startGame('hard')">Сложно</button>
-                <button class="main-menu-button" onclick="startGame('expert')">Эксперт</button>
-                <button class="main-menu-button col-span-2" onclick="startGame('insane')">Безумие</button>
-                <button class="main-menu-button col-span-2" onclick="startGame('impossible')">Невозможно</button>
-                <button class="main-menu-button secondary-button col-span-2 mt-4" id="stats-button">Статистика</button>
+                 <button class="main-menu-button secondary-button col-span-2 mt-4" id="stats-button">Статистика</button>
                 <button class="main-menu-button secondary-button col-span-2 mt-4" id="other-games-btn">Другие игры</button>
             </div>
             <div class="flex justify-center items-center space-x-4 pt-6">
@@ -211,7 +218,7 @@
         <div class="modal-content w-full max-w-sm p-6 rounded-2xl shadow-lg text-center">
             <h2 class="text-3xl font-bold mb-4" style="color: var(--primary-color);">Статистика</h2>
             <table class="stats-table">
-                <thead><tr><th>Уровень</th><th>Игр</th><th>Время</th></tr></thead>
+                <thead><tr><th>Уровень</th><th>Побед</th><th>Время</th></tr></thead>
                 <tbody>
                     <tr><td>Легко</td><td id="games-played-easy">0</td><td id="best-time-easy">--:--</td></tr>
                     <tr><td>Средне</td><td id="games-played-medium">0</td><td id="best-time-medium">--:--</td></tr>
@@ -254,6 +261,7 @@
             game: document.getElementById('game-screen'),
             otherGames: document.getElementById('other-games-screen')
         };
+        const levelSelectionContainer = document.getElementById('level-selection-container');
         const gameBoard = document.getElementById('game-board');
         const moveCountSpan = document.getElementById('move-count');
         const timerSpan = document.getElementById('timer');
@@ -261,6 +269,7 @@
         const undoCountSpan = document.getElementById('undo-count');
         const themeToggle = document.getElementById('theme-toggle');
         const bgMusic = document.getElementById('bg-music');
+        const pourSound = document.getElementById('pour-sound');
         
         // --- Game State ---
         let tubes = [], selectedTube = null, moveCount = 0, timerInterval = null, seconds = 0;
@@ -283,30 +292,22 @@
         const COLORS = ["#d90429", "#f77f00", "#fcc419", "#20c997", "#43a047", "#0077b6", "#03045e", "#7209b7", "#ff006e", "#8d5b4c", "#8d99ae", "#00b4d8", "#c72c71"];
         const LIQUID_LAYERS = 4;
         const UNDO_LIMIT = 3;
+        const WINS_TO_UNLOCK = 10;
         const LEVEL_CONFIG = {
-            easy:   { tubes: 6, empty: 2, colors: 4 },
-            medium: { tubes: 9, empty: 2, colors: 7 },
-            hard:   { tubes: 12, empty: 2, colors: 10 },
-            expert: { tubes: 15, empty: 2, colors: 13 },
-            insane: { tubes: 18, empty: 2, colors: 13, doubleColors: true },
-            impossible: { tubes: 25, empty: 2, colors: 13, doubleColors: true }
+            easy:   { name: 'Легко', tubes: 6, empty: 2, colors: 4 },
+            medium: { name: 'Средне', tubes: 9, empty: 2, colors: 7 },
+            hard:   { name: 'Сложно', tubes: 12, empty: 2, colors: 10 },
+            expert: { name: 'Эксперт', tubes: 15, empty: 2, colors: 13 },
+            insane: { name: 'Безумие', tubes: 18, empty: 2, colors: 13, doubleColors: true },
+            impossible: { name: 'Невозможно', tubes: 25, empty: 2, colors: 13, doubleColors: true }
         };
         
         // --- Audio Manager ---
         const audioManager = {
-            pourSynth: null,
             winSynth: null,
             isReady: false,
 
             init() {
-                this.pourSynth = new Tone.FMSynth({
-                    harmonicity: 1.5,
-                    modulationIndex: 10,
-                    envelope: { attack: 0.01, decay: 0.2, sustain: 0.01, release: 0.2 },
-                    modulationEnvelope: { attack: 0.01, decay: 0.3, sustain: 0.01, release: 0.3 }
-                }).toDestination();
-                this.pourSynth.volume.value = -3;
-
                 this.winSynth = new Tone.PolySynth(Tone.Synth, {
                      oscillator: { type: 'triangle8' },
                      envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 1 }
@@ -320,7 +321,8 @@
                 if (!this.isReady || gameData.isMuted) return;
                 try {
                     if (sound === 'pour') {
-                        this.pourSynth.triggerAttack("C2", Tone.now());
+                        pourSound.currentTime = 0;
+                        pourSound.play().catch(e => {});
                     }
                     if (sound === 'win') {
                         const now = Tone.now();
@@ -337,7 +339,7 @@
                 document.getElementById('sound-on-icon').classList.toggle('hidden', gameData.isMuted);
                 document.getElementById('sound-off-icon').classList.toggle('hidden', !gameData.isMuted);
                 
-                if (gameData.isMuted || !screens.game.classList.contains('active')) {
+                if (gameData.isMuted) {
                     bgMusic.pause();
                 } else {
                     bgMusic.play().catch(e => {});
@@ -371,7 +373,7 @@
                  if (!audioManager.isReady) {
                     Tone.start().then(() => {
                         audioManager.init();
-                        if(!gameData.isMuted && screens.game.classList.contains('active')) {
+                        if(!gameData.isMuted) {
                             bgMusic.play().catch(e => {});
                         }
                     });
@@ -390,7 +392,7 @@
                     }
                 }
                 if (e.detail.type === 'VKWebAppViewRestore') {
-                    if (wasMusicPlaying && !gameData.isMuted && !screens.game.classList.contains('hidden')) {
+                    if (wasMusicPlaying && !gameData.isMuted) {
                        bgMusic.play().catch(e => {});
                     }
                     wasMusicPlaying = false;
@@ -406,6 +408,7 @@
             }
             await loadGameData();
             setTheme(gameData.theme);
+            renderMenu();
             renderOtherGames();
             document.getElementById('sound-on-icon').classList.toggle('hidden', gameData.isMuted);
             document.getElementById('sound-off-icon').classList.toggle('hidden', !gameData.isMuted);
@@ -417,11 +420,12 @@
             Object.values(screens).forEach(s => s.classList.add('hidden'));
             screens[screenName].classList.remove('hidden');
             
+            if (!gameData.isMuted) {
+                bgMusic.play().catch(e => {});
+            }
+            
             if (screenName === 'game') {
-                if (!gameData.isMuted) bgMusic.play().catch(e => {});
                 requestAnimationFrame(() => adjustTubeSize(tubes.length));
-            } else {
-                bgMusic.pause();
             }
             vkBridge.send('VKWebAppShowBannerAd', { banner_location: 'bottom' }).catch(e => {});
         }
@@ -461,15 +465,60 @@
             resetGame();
         }
         
-        function nextLevel() { closeModal('win-modal'); resetGame(); }
+        function nextLevel() {
+            closeModal('win-modal');
+            resetGame();
+        }
 
         function goToMainMenu() {
-            closeModal('pause-modal'); closeModal('win-modal');
+            closeModal('pause-modal');
+            closeModal('win-modal');
             stopTimer();
+            renderMenu(); // Update menu in case a level was unlocked
             showScreen('mainMenu');
         }
 
-        // --- Level Generation ---
+        // --- Level Generation & Rendering ---
+        function renderMenu() {
+            levelSelectionContainer.innerHTML = '';
+            const difficulties = Object.keys(LEVEL_CONFIG);
+
+            for (let i = 0; i < difficulties.length; i++) {
+                const difficulty = difficulties[i];
+                const config = LEVEL_CONFIG[difficulty];
+                const prevDifficulty = i > 0 ? difficulties[i-1] : null;
+
+                let isUnlocked = (difficulty === 'easy');
+                let winsOnPrev = 0;
+                if (prevDifficulty) {
+                    winsOnPrev = gameData.stats.gamesPlayed[prevDifficulty] || 0;
+                    if (winsOnPrev >= WINS_TO_UNLOCK) {
+                        isUnlocked = true;
+                    }
+                }
+                
+                const isFullWidth = ['insane', 'impossible'].includes(difficulty);
+
+                const button = document.createElement('button');
+                button.className = `main-menu-button relative overflow-hidden ${isFullWidth ? 'col-span-2' : ''}`;
+                button.onclick = () => startGame(difficulty);
+                button.disabled = !isUnlocked;
+
+                if (isUnlocked) {
+                    button.textContent = config.name;
+                } else {
+                    button.innerHTML = `
+                        <div class="flex items-center justify-center">
+                           <svg class="w-6 h-6 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd"></path></svg>
+                           <span>${config.name}</span>
+                        </div>
+                        <div class="absolute bottom-1 right-2 text-xs font-bold text-white opacity-80">${winsOnPrev}/${WINS_TO_UNLOCK}</div>
+                    `;
+                }
+                levelSelectionContainer.appendChild(button);
+            }
+        }
+
         function generateLevel(difficulty) {
             const config = LEVEL_CONFIG[difficulty];
             const tubesWithLiquid = config.tubes - config.empty;
@@ -671,7 +720,7 @@
             stopTimer();
             audioManager.playSound('win');
             gameData.stats.gamesPlayed[currentDifficulty] = (gameData.stats.gamesPlayed[currentDifficulty] || 0) + 1;
-            if (seconds < gameData.stats.bestTime[currentDifficulty] || gameData.stats.bestTime[currentDifficulty] === Infinity) {
+            if (seconds < gameData.stats.bestTime[currentDifficulty]) {
                 gameData.stats.bestTime[currentDifficulty] = seconds;
             }
             showInterstitialAd();
@@ -712,7 +761,7 @@
         function formatTime(s) { return `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`; }
         function updateMoveCount() { moveCountSpan.textContent = moveCount; }
         function showPauseMenu() { isPaused = true; if (!gameData.isMuted) bgMusic.pause(); openModal('pause-modal'); }
-        function resumeGame() { isPaused = false; if (!gameData.isMuted && !screens.game.classList.contains('hidden')) bgMusic.play().catch(e=>{}); closeModal('pause-modal'); }
+        function resumeGame() { isPaused = false; if (!gameData.isMuted) bgMusic.play().catch(e=>{}); closeModal('pause-modal'); }
         function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
         function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
         
@@ -746,6 +795,14 @@
                 if (localData) loadedData = JSON.parse(localData);
             }
             if (loadedData) {
+                // Fix for Infinity being stringified to null
+                if (loadedData.stats && loadedData.stats.bestTime) {
+                    for (const diff in loadedData.stats.bestTime) {
+                        if (loadedData.stats.bestTime[diff] === null) {
+                            loadedData.stats.bestTime[diff] = Infinity;
+                        }
+                    }
+                }
                 gameData.stats.bestTime = {...gameData.stats.bestTime, ...loadedData.stats?.bestTime };
                 gameData.stats.gamesPlayed = {...gameData.stats.gamesPlayed, ...loadedData.stats?.gamesPlayed };
                 gameData.theme = loadedData.theme || 'light';
