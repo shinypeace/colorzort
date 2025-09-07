@@ -273,7 +273,7 @@
         
         // --- Game State ---
         let tubes = [], selectedTube = null, moveCount = 0, timerInterval = null, seconds = 0;
-        let currentDifficulty = 'easy', history = [], isPaused = false, isAnimating = false;
+        let currentDifficulty = 'easy', history = [], isPaused = false;
         let undosLeft = 3;
         let vkUserId = null;
         let wasMusicPlaying = false;
@@ -294,12 +294,12 @@
         const UNDO_LIMIT = 3;
         const WINS_TO_UNLOCK = 10;
         const LEVEL_CONFIG = {
-            easy:   { name: 'Легко', colors: 4,  empty: 2 },
-            medium: { name: 'Средне', colors: 7,  empty: 2 },
-            hard:   { name: 'Сложно', colors: 10, empty: 2 },
-            expert: { name: 'Эксперт', colors: 13, empty: 2 },
-            insane: { name: 'Безумие', colors: 13, empty: 2, doubleColors: true },
-            impossible: { name: 'Невозможно', colors: 14, empty: 2, doubleColors: true }
+            easy:   { name: 'Легко', tubes: 6, empty: 2, colors: 4 },
+            medium: { name: 'Средне', tubes: 9, empty: 2, colors: 7 },
+            hard:   { name: 'Сложно', tubes: 12, empty: 2, colors: 10 },
+            expert: { name: 'Эксперт', tubes: 15, empty: 2, colors: 13 },
+            insane: { name: 'Безумие', tubes: 18, empty: 2, colors: 13, doubleColors: true },
+            impossible: { name: 'Невозможно', tubes: 25, empty: 2, colors: 13, doubleColors: true }
         };
         
         // --- Audio Manager ---
@@ -309,12 +309,16 @@
             isReady: false,
 
             init() {
-                this.pourSynth = new Tone.MembraneSynth({
-                    pitchDecay: 0.02,
-                    octaves: 2,
-                    envelope: { attack: 0.005, decay: 0.25, sustain: 0.01, release: 0.4 }
+                this.pourSynth = new Tone.NoiseSynth({
+                    noise: { type: 'brown' },
+                    envelope: { attack: 0.01, decay: 0.15, sustain: 0.1, release: 0.2 }
                 }).toDestination();
-                this.pourSynth.volume.value = -5;
+                this.pourSynth.volume.value = -8;
+                const filter = new Tone.AutoFilter({
+                    frequency: '2n', baseFrequency: 200, octaves: 4
+                }).toDestination();
+                this.pourSynth.connect(filter);
+                filter.start();
 
                 this.winSynth = new Tone.PolySynth(Tone.Synth, {
                      oscillator: { type: 'triangle8' },
@@ -322,7 +326,6 @@
                 }).toDestination();
                 this.winSynth.volume.value = -10;
                 
-                bgMusic.volume = 0.2;
                 this.isReady = true;
             },
             
@@ -330,7 +333,7 @@
                 if (!this.isReady || gameData.isMuted) return;
                 try {
                     if (sound === 'pour') {
-                        this.pourSynth.triggerAttackRelease("C2", "8n");
+                        this.pourSynth.triggerAttackRelease("8n");
                     }
                     if (sound === 'win') {
                         const now = Tone.now();
@@ -531,12 +534,10 @@
 
         function generateLevel(difficulty) {
             const config = LEVEL_CONFIG[difficulty];
+            const tubesWithLiquid = config.tubes - config.empty;
             const levelColors = shuffleArray([...COLORS]).slice(0, config.colors);
             const layersPerColor = config.doubleColors ? LIQUID_LAYERS * 2 : LIQUID_LAYERS;
             let colorPool = levelColors.flatMap(color => Array(layersPerColor).fill(color));
-            
-            const tubesWithLiquid = colorPool.length / LIQUID_LAYERS;
-            
             colorPool = shuffleArray(colorPool);
             tubes = [];
             for (let i = 0; i < tubesWithLiquid; i++) tubes.push({ id: i, liquids: colorPool.splice(0, LIQUID_LAYERS), isAnimating: false });
@@ -546,6 +547,7 @@
             if (isLevelSolved(tubes.filter(t => !t.isPlaceholder))) {
                 return generateLevel(difficulty);
             }
+            // Save initial state for first undo
             saveState(true);
             renderTubes();
         }
@@ -602,7 +604,7 @@
                         liquidEl.className = 'liquid';
                         liquidEl.style.backgroundColor = color;
                         liquidEl.style.height = `${100 / LIQUID_LAYERS}%`;
-                        tubeEl.appendChild(document.createTextNode(''));
+                        tubeEl.appendChild(liquidEl);
                     });
                 }
                 gameBoard.appendChild(tubeEl);
@@ -658,6 +660,7 @@
                 }
                 
                 if (canPour(currentSelectedTube, clickedTubeData)) {
+                    saveState();
                     initiatePour(currentSelectedTube, clickedTubeData);
                 }
             }
@@ -671,8 +674,6 @@
         }
 
         function initiatePour(fromTube, toTube) {
-            saveState(); // Save state before the move
-            
             moveCount++;
             updateMoveCount();
             
@@ -768,13 +769,13 @@
         }
         
         function saveState(isInitial = false) {
-             const stateToSave = {
-                tubes: JSON.parse(JSON.stringify(tubes.map(({ isAnimating, ...rest }) => rest))),
-                moveCount: moveCount,
-                undosLeft: undosLeft
-            };
+            const stateToSave = tubes.map(t => ({
+                id: t.id,
+                liquids: [...t.liquids],
+                isPlaceholder: t.isPlaceholder
+            }));
 
-            if (isInitial) {
+            if(isInitial) {
                 history = [stateToSave];
             } else {
                 history.push(stateToSave);
@@ -784,30 +785,25 @@
             updateUndoButtonUI();
         }
 
-        function restoreState(state) {
-            tubes.forEach(tube => {
-                const restoredTube = state.tubes.find(rt => rt.id === tube.id);
-                if (restoredTube) {
-                    tube.liquids = restoredTube.liquids;
-                    tube.isPlaceholder = restoredTube.isPlaceholder;
-                }
-            });
-            moveCount = state.moveCount;
-            undosLeft = state.undosLeft;
-            
-            updateMoveCount();
-            updateUndoButtonUI();
-            renderTubes();
-        }
-
-
         function undoMove() {
             const isAnyTubeAnimating = tubes.some(t => t.isAnimating);
             if (history.length > 1 && !isAnyTubeAnimating && undosLeft > 0) {
-                history.pop();
-                const lastState = history[history.length - 1];
+                undosLeft--;
+                history.pop(); // Pop current state
+                const prevState = history[history.length - 1]; // Get previous state
                 
-                restoreState({ ...lastState, undosLeft: undosLeft - 1 });
+                tubes.forEach(tube => {
+                    const prevTube = prevState.find(pt => pt.id === tube.id);
+                    if (prevTube) {
+                        tube.liquids = [...prevTube.liquids];
+                        tube.isPlaceholder = prevTube.isPlaceholder;
+                    }
+                });
+
+                moveCount--;
+                updateMoveCount();
+                renderTubes();
+                updateUndoButtonUI();
             }
         }
         
