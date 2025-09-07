@@ -153,7 +153,6 @@
 <body class="flex items-center justify-center h-screen select-none">
 
     <audio id="bg-music" loop src="music.mp3"></audio>
-    <audio id="pour-sound" src="pour-sound.mp3" preload="auto"></audio>
 
     <!-- Главное меню -->
     <div id="main-menu" class="screen hidden flex flex-col items-center justify-center text-center p-8 h-full w-full max-w-md mx-auto">
@@ -271,7 +270,6 @@
         const undoCountSpan = document.getElementById('undo-count');
         const themeToggle = document.getElementById('theme-toggle');
         const bgMusic = document.getElementById('bg-music');
-        const pourSound = document.getElementById('pour-sound');
         
         // --- Game State ---
         let tubes = [], selectedTube = null, moveCount = 0, timerInterval = null, seconds = 0;
@@ -306,10 +304,22 @@
         
         // --- Audio Manager ---
         const audioManager = {
+            pourSynth: null,
             winSynth: null,
             isReady: false,
 
             init() {
+                this.pourSynth = new Tone.NoiseSynth({
+                    noise: { type: 'brown' },
+                    envelope: { attack: 0.01, decay: 0.15, sustain: 0.1, release: 0.2 }
+                }).toDestination();
+                this.pourSynth.volume.value = -8;
+                const filter = new Tone.AutoFilter({
+                    frequency: '2n', baseFrequency: 200, octaves: 4
+                }).toDestination();
+                this.pourSynth.connect(filter);
+                filter.start();
+
                 this.winSynth = new Tone.PolySynth(Tone.Synth, {
                      oscillator: { type: 'triangle8' },
                      envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 1 }
@@ -323,8 +333,7 @@
                 if (!this.isReady || gameData.isMuted) return;
                 try {
                     if (sound === 'pour') {
-                        pourSound.currentTime = 0;
-                        pourSound.play().catch(e => {});
+                        this.pourSynth.triggerAttackRelease("8n");
                     }
                     if (sound === 'win') {
                         const now = Tone.now();
@@ -336,8 +345,10 @@
                 } catch(e) { console.error("Sound play error", e); }
             },
 
-            toggleMute() {
-                gameData.isMuted = !gameData.isMuted;
+            toggleMute(forceState) {
+                const newState = (typeof forceState === 'boolean') ? forceState : !gameData.isMuted;
+                gameData.isMuted = newState;
+
                 document.getElementById('sound-on-icon').classList.toggle('hidden', gameData.isMuted);
                 document.getElementById('sound-off-icon').classList.toggle('hidden', !gameData.isMuted);
                 
@@ -346,17 +357,19 @@
                 } else {
                     bgMusic.play().catch(e => {});
                 }
-                saveGameData();
+
+                if(typeof forceState === 'undefined') {
+                    saveGameData();
+                }
             }
         };
-
 
         // --- Initialization ---
         document.addEventListener('DOMContentLoaded', async () => {
             await init();
             
             document.getElementById('stats-button').addEventListener('click', () => openModal('stats-modal'));
-            document.getElementById('sound-toggle-btn').addEventListener('click', audioManager.toggleMute.bind(audioManager));
+            document.getElementById('sound-toggle-btn').addEventListener('click', () => audioManager.toggleMute());
             undoButton.addEventListener('click', undoMove);
             themeToggle.addEventListener('change', () => setTheme(themeToggle.checked ? 'dark' : 'light'));
             window.addEventListener('resize', () => {
@@ -371,14 +384,13 @@
                 if (gameEl) vkBridge.send('VKWebAppOpenApp', { app_id: parseInt(gameEl.dataset.appId) });
             });
             
-            document.body.addEventListener('click', () => {
+            document.body.addEventListener('click', async () => {
                  if (!audioManager.isReady) {
-                    Tone.start().then(() => {
-                        audioManager.init();
-                        if(!gameData.isMuted) {
-                            bgMusic.play().catch(e => {});
-                        }
-                    });
+                    await Tone.start();
+                    audioManager.init();
+                    if(!gameData.isMuted) {
+                        bgMusic.play().catch(e => {});
+                    }
                  }
             }, { once: true });
         });
@@ -412,8 +424,7 @@
             setTheme(gameData.theme);
             renderMenu();
             renderOtherGames();
-            document.getElementById('sound-on-icon').classList.toggle('hidden', gameData.isMuted);
-            document.getElementById('sound-off-icon').classList.toggle('hidden', !gameData.isMuted);
+            audioManager.toggleMute(gameData.isMuted);
             showScreen('mainMenu');
         }
 
@@ -476,7 +487,7 @@
             closeModal('pause-modal');
             closeModal('win-modal');
             stopTimer();
-            renderMenu(); // Update menu in case a level was unlocked
+            renderMenu();
             showScreen('mainMenu');
         }
 
@@ -536,6 +547,8 @@
             if (isLevelSolved(tubes.filter(t => !t.isPlaceholder))) {
                 return generateLevel(difficulty);
             }
+            // Save initial state for first undo
+            saveState(true);
             renderTubes();
         }
 
@@ -572,6 +585,7 @@
             document.documentElement.style.setProperty('--tube-margin', `${finalTubeMargin}px`);
         }
 
+        // --- Rendering ---
         function renderTubes() {
             gameBoard.innerHTML = '';
             tubes.forEach(tube => {
@@ -635,16 +649,19 @@
                     tubeEl.classList.add('selected');
                 }
             } else {
+                const currentSelectedTube = selectedTube;
                 const selectedEl = document.querySelector('.tube-container.selected');
-                if (selectedTube.id === clickedTubeData.id) {
-                    selectedTube = null;
-                    selectedEl?.classList.remove('selected');
-                } else {
-                    if (canPour(selectedTube, clickedTubeData)) {
-                        initiatePour(selectedTube, clickedTubeData);
-                    }
-                    selectedTube = null;
-                    selectedEl?.classList.remove('selected');
+                
+                selectedTube = null;
+                selectedEl?.classList.remove('selected');
+
+                if (currentSelectedTube.id === clickedTubeData.id) {
+                   return; // Deselected
+                }
+                
+                if (canPour(currentSelectedTube, clickedTubeData)) {
+                    saveState();
+                    initiatePour(currentSelectedTube, clickedTubeData);
                 }
             }
         }
@@ -657,7 +674,9 @@
         }
 
         function initiatePour(fromTube, toTube) {
-            // Instantly update game state
+            moveCount++;
+            updateMoveCount();
+            
             const topColor = fromTube.liquids[fromTube.liquids.length - 1];
             let amountToMove = fromTube.liquids.slice().reverse().findIndex(c => c !== topColor);
             if (amountToMove === -1) amountToMove = fromTube.liquids.length;
@@ -665,12 +684,6 @@
             const liquidsToMove = fromTube.liquids.splice(fromTube.liquids.length - amountToMove);
             toTube.liquids.push(...liquidsToMove);
 
-            // Update non-visual game elements
-            saveState();
-            moveCount++;
-            updateMoveCount();
-
-            // Fire off the animation without waiting
             animatePour(fromTube, toTube, liquidsToMove);
         }
         
@@ -683,7 +696,6 @@
 
             fromEl.classList.add('pouring');
             
-            // --- Animation ---
             audioManager.playSound('pour');
             const fromRect = fromEl.getBoundingClientRect();
             const toRect = toEl.getBoundingClientRect();
@@ -696,7 +708,6 @@
             await wait(200);
             fromEl.style.transform = `translate(${moveX}px, ${moveY}px) rotate(${rotation}deg)`;
             
-            // --- Manual DOM update for animation ---
             const liquidElsToRemove = Array.from(fromEl.querySelectorAll('.liquid')).slice(-liquidsMoved.length);
             liquidElsToRemove.forEach(el => el.style.height = '0%');
             await wait(300);
@@ -723,12 +734,11 @@
             fromTube.isAnimating = false;
             toTube.isAnimating = false;
             
-            // Check for win condition after animation
-            if (isLevelSolved(tubes.filter(t => !t.isPlaceholder))) {
+            const isAnyTubeAnimating = tubes.some(t => t.isAnimating);
+            if (!isAnyTubeAnimating && isLevelSolved(tubes.filter(t => !t.isPlaceholder))) {
                 winGame();
             }
         }
-
 
         async function unlockExtraTube(tubeId) {
             const tube = tubes.find(t => t.id === tubeId);
@@ -758,17 +768,38 @@
             openModal('win-modal');
         }
         
-        function saveState() {
-            history.push(JSON.parse(JSON.stringify(tubes)));
+        function saveState(isInitial = false) {
+            const stateToSave = tubes.map(t => ({
+                id: t.id,
+                liquids: [...t.liquids],
+                isPlaceholder: t.isPlaceholder
+            }));
+
+            if(isInitial) {
+                history = [stateToSave];
+            } else {
+                history.push(stateToSave);
+            }
+            
             if (history.length > 20) history.shift();
             updateUndoButtonUI();
         }
 
         function undoMove() {
             const isAnyTubeAnimating = tubes.some(t => t.isAnimating);
-            if (history.length > 0 && !isAnyTubeAnimating && undosLeft > 0) {
+            if (history.length > 1 && !isAnyTubeAnimating && undosLeft > 0) {
                 undosLeft--;
-                tubes = history.pop();
+                history.pop(); // Pop current state
+                const prevState = history[history.length - 1]; // Get previous state
+                
+                tubes.forEach(tube => {
+                    const prevTube = prevState.find(pt => pt.id === tube.id);
+                    if (prevTube) {
+                        tube.liquids = [...prevTube.liquids];
+                        tube.isPlaceholder = prevTube.isPlaceholder;
+                    }
+                });
+
                 moveCount--;
                 updateMoveCount();
                 renderTubes();
@@ -778,7 +809,8 @@
         
         function updateUndoButtonUI() {
             undoCountSpan.textContent = undosLeft;
-            const isDisabled = history.length === 0 || undosLeft <= 0;
+            const isAnyTubeAnimating = tubes.some(t => t.isAnimating);
+            const isDisabled = history.length <= 1 || undosLeft <= 0 || isAnyTubeAnimating;
             undoButton.classList.toggle('disabled', isDisabled);
         }
 
@@ -822,7 +854,6 @@
                 if (localData) loadedData = JSON.parse(localData);
             }
             if (loadedData) {
-                // Fix for Infinity being stringified to null
                 if (loadedData.stats && loadedData.stats.bestTime) {
                     for (const diff in loadedData.stats.bestTime) {
                         if (loadedData.stats.bestTime[diff] === null) {
