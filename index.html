@@ -273,7 +273,7 @@
         
         // --- Game State ---
         let tubes = [], selectedTube = null, moveCount = 0, timerInterval = null, seconds = 0;
-        let currentDifficulty = 'easy', history = [], isPaused = false;
+        let currentDifficulty = 'easy', history = [], isPaused = false, isAnimating = false;
         let undosLeft = 3;
         let vkUserId = null;
         let wasMusicPlaying = false;
@@ -294,12 +294,12 @@
         const UNDO_LIMIT = 3;
         const WINS_TO_UNLOCK = 10;
         const LEVEL_CONFIG = {
-            easy:   { name: 'Легко', tubes: 6, empty: 2, colors: 4 },
-            medium: { name: 'Средне', tubes: 9, empty: 2, colors: 7 },
-            hard:   { name: 'Сложно', tubes: 12, empty: 2, colors: 10 },
-            expert: { name: 'Эксперт', tubes: 15, empty: 2, colors: 13 },
-            insane: { name: 'Безумие', tubes: 18, empty: 2, colors: 13, doubleColors: true },
-            impossible: { name: 'Невозможно', tubes: 25, empty: 2, colors: 13, doubleColors: true }
+            easy:   { name: 'Легко', colors: 4,  empty: 2 },
+            medium: { name: 'Средне', colors: 7,  empty: 2 },
+            hard:   { name: 'Сложно', colors: 10, empty: 2 },
+            expert: { name: 'Эксперт', colors: 13, empty: 2 },
+            insane: { name: 'Безумие', colors: 13, empty: 2, doubleColors: true },
+            impossible: { name: 'Невозможно', colors: 14, empty: 2, doubleColors: true }
         };
         
         // --- Audio Manager ---
@@ -531,10 +531,12 @@
 
         function generateLevel(difficulty) {
             const config = LEVEL_CONFIG[difficulty];
-            const tubesWithLiquid = config.tubes - config.empty;
             const levelColors = shuffleArray([...COLORS]).slice(0, config.colors);
             const layersPerColor = config.doubleColors ? LIQUID_LAYERS * 2 : LIQUID_LAYERS;
             let colorPool = levelColors.flatMap(color => Array(layersPerColor).fill(color));
+            
+            const tubesWithLiquid = colorPool.length / LIQUID_LAYERS;
+            
             colorPool = shuffleArray(colorPool);
             tubes = [];
             for (let i = 0; i < tubesWithLiquid; i++) tubes.push({ id: i, liquids: colorPool.splice(0, LIQUID_LAYERS), isAnimating: false });
@@ -544,7 +546,7 @@
             if (isLevelSolved(tubes.filter(t => !t.isPlaceholder))) {
                 return generateLevel(difficulty);
             }
-            saveState(true); // Save initial state for first undo
+            saveState(true);
             renderTubes();
         }
 
@@ -600,7 +602,7 @@
                         liquidEl.className = 'liquid';
                         liquidEl.style.backgroundColor = color;
                         liquidEl.style.height = `${100 / LIQUID_LAYERS}%`;
-                        liquidEl.appendChild(document.createTextNode('')); // Force repaint
+                        tubeEl.appendChild(document.createTextNode(''));
                     });
                 }
                 gameBoard.appendChild(tubeEl);
@@ -662,7 +664,7 @@
         }
 
         function canPour(from, to) {
-            if (!from || !to || from.isAnimating) return false;
+            if (!from || !to || from.isAnimating || to.isAnimating) return false;
             if (from.liquids.length === 0 || to.liquids.length === LIQUID_LAYERS) return false;
             if (to.liquids.length === 0) return true;
             return from.liquids[from.liquids.length - 1] === to.liquids[to.liquids.length - 1];
@@ -802,10 +804,10 @@
         function undoMove() {
             const isAnyTubeAnimating = tubes.some(t => t.isAnimating);
             if (history.length > 1 && !isAnyTubeAnimating && undosLeft > 0) {
-                history.pop(); // Pop current state from history
-                const stateToRestore = history[history.length - 1];
+                history.pop();
+                const lastState = history[history.length - 1];
                 
-                restoreState({ ...stateToRestore, undosLeft: undosLeft - 1 });
+                restoreState({ ...lastState, undosLeft: undosLeft - 1 });
             }
         }
         
