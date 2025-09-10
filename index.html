@@ -313,7 +313,7 @@
                     noise: { type: 'brown' },
                     envelope: { attack: 0.01, decay: 0.2, sustain: 0.4, release: 0.2 }
                 }).toDestination();
-                this.pourSynth.volume.value = -12;
+                this.pourSynth.volume.value = -6; // Увеличена громкость
                 const filter = new Tone.AutoFilter({
                     frequency: '4n', baseFrequency: 150, octaves: 3
                 }).toDestination();
@@ -368,7 +368,7 @@
         document.addEventListener('DOMContentLoaded', async () => {
             await init();
             
-            bgMusic.volume = 0.3; // Уменьшаем громкость фоновой музыки
+            bgMusic.volume = 0.3; 
             
             document.getElementById('stats-button').addEventListener('click', () => openModal('stats-modal'));
             document.getElementById('sound-toggle-btn').addEventListener('click', () => audioManager.toggleMute());
@@ -471,7 +471,9 @@
         function resetGame() {
             isPaused = false; moveCount = 0; seconds = 0; history = [];
             undosLeft = UNDO_LIMIT;
-            updateMoveCount(); updateUndoButtonUI(); startTimer();
+            updateMoveCount(); 
+            updateUndoButtonUI(); 
+            startTimer();
             generateLevel(currentDifficulty);
         }
 
@@ -690,6 +692,7 @@
         async function animatePour(fromTube, toTube, liquidsMoved) {
             fromTube.isAnimating = true;
             toTube.isAnimating = true;
+            updateUndoButtonUI(); // Обновляем состояние кнопки перед анимацией
 
             const fromEl = document.querySelector(`.tube-container[data-id='${fromTube.id}']`);
             const toEl = document.querySelector(`.tube-container[data-id='${toTube.id}']`);
@@ -733,6 +736,7 @@
             fromEl.classList.remove('pouring');
             fromTube.isAnimating = false;
             toTube.isAnimating = false;
+            updateUndoButtonUI(); // Обновляем состояние кнопки после анимации
             
             const isAnyTubeAnimating = tubes.some(t => t.isAnimating);
             if (!isAnyTubeAnimating && isLevelSolved(tubes.filter(t => !t.isPlaceholder))) {
@@ -783,7 +787,7 @@
             const isAnyTubeAnimating = tubes.some(t => t.isAnimating);
             if (history.length > 0 && !isAnyTubeAnimating && undosLeft > 0) {
                 undosLeft--;
-                const prevState = history.pop(); // Извлекаем последнее сохраненное состояние для восстановления
+                const prevState = history.pop();
                 
                 tubes.forEach(tube => {
                     const prevTube = prevState.find(pt => pt.id === tube.id);
@@ -880,3 +884,4 @@
     </script>
 </body>
 </html>
+
