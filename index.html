@@ -309,16 +309,31 @@
             isReady: false,
 
             init() {
-                this.pourSynth = new Tone.NoiseSynth({
-                    noise: { type: 'brown' },
-                    envelope: { attack: 0.01, decay: 0.2, sustain: 0.4, release: 0.2 }
+                // Заменяем NoiseSynth на FMSynth для более приятного "водного" звука
+                this.pourSynth = new Tone.FMSynth({
+                    harmonicity: 1.5,
+                    modulationIndex: 10,
+                    detune: 0,
+                    oscillator: {
+                        type: "sine"
+                    },
+                    envelope: {
+                        attack: 0.01,
+                        decay: 0.2,
+                        sustain: 0.1,
+                        release: 0.5
+                    },
+                    modulation: {
+                        type: "square"
+                    },
+                    modulationEnvelope: {
+                        attack: 0.05,
+                        decay: 0.1,
+                        sustain: 0.3,
+                        release: 0.5
+                    }
                 }).toDestination();
-                this.pourSynth.volume.value = -6; // Увеличена громкость
-                const filter = new Tone.AutoFilter({
-                    frequency: '4n', baseFrequency: 150, octaves: 3
-                }).toDestination();
-                this.pourSynth.connect(filter);
-                filter.start();
+                this.pourSynth.volume.value = -12; // Настраиваем громкость
 
                 this.winSynth = new Tone.PolySynth(Tone.Synth, {
                      oscillator: { type: 'triangle8' },
@@ -333,7 +348,10 @@
                 if (!this.isReady || gameData.isMuted) return;
                 try {
                     if (sound === 'pour') {
-                        this.pourSynth.triggerAttackRelease(0.7);
+                        // Запускаем звук с падающей высотой тона для эффекта "бульк"
+                        this.pourSynth.triggerAttackRelease("C4", "8n");
+                        this.pourSynth.frequency.setValueAtTime("C4", Tone.now());
+                        this.pourSynth.frequency.linearRampToValueAtTime("G3", Tone.now() + 0.3);
                     }
                     if (sound === 'win') {
                         const now = Tone.now();
